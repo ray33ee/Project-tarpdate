@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 use crate::archive::Archive;
-use std::fs::OpenOptions;
+use std::fs::{OpenOptions, File};
 use std::io::{Seek, SeekFrom};
 use crate::header::Metadata;
 
@@ -8,22 +8,22 @@ pub struct Builder<'a> {
 
     archive: & 'a  mut Archive,
 
-    file: std::fs::File,
+    archive_file: std::fs::File,
 }
 
 impl<'a> Builder<'a> {
 
     pub fn new(archive: & 'a mut Archive) -> Self {
         //Truncate the file to remove the toc for overwriting
-        let file = OpenOptions::new().write(true).open(&archive.path).unwrap();
-        file.set_len(archive.toc_offset).unwrap();
+        let archive_file = OpenOptions::new().write(true).open(&archive.path).unwrap();
+        archive_file.set_len(archive.toc_offset as u64).unwrap();
 
         //Open the file for appending
-        let file = OpenOptions::new().write(true).append(true).open(&archive.path).unwrap();
+        let archive_file = OpenOptions::new().write(true).append(true).open(&archive.path).unwrap();
 
         Self {
             archive,
-            file,
+            archive_file,
         }
 
     }
@@ -38,19 +38,19 @@ impl<'a> Builder<'a> {
         }
 
         //Get the position of the stream (this will be used as the file offset in the toc)
-        self.file.seek(SeekFrom::End(0)).unwrap();
-        let position = self.file.stream_position().unwrap();
+        self.archive_file.seek(SeekFrom::End(0)).unwrap();
+        let position = self.archive_file.stream_position().unwrap();
 
         //Append the metadata
-        let meta: Metadata = self.file.metadata().unwrap().into();
+        let meta: Metadata = File::open(&path).unwrap().metadata().unwrap().into();
 
-        bincode::serialize_into(&self.file, &meta).unwrap();
+        bincode::serialize_into(&self.archive_file, &meta).unwrap();
 
         //Append the file
         {
             let mut file = OpenOptions::new().read(true).open(&path).unwrap();
 
-            std::io::copy(& mut file, & mut self.file).unwrap();
+            std::io::copy(& mut file, & mut self.archive_file).unwrap();
         }
 
         //Add the (name, file_offset) pair to the toc
@@ -60,17 +60,17 @@ impl<'a> Builder<'a> {
 
     pub fn finalise(mut self) {
         //Get this position of the stream (which is the size of the file at this point, without the toc)
-        self.file.seek(SeekFrom::End(0)).unwrap();
-        let position = self.file.stream_position().unwrap();
+        self.archive_file.seek(SeekFrom::End(0)).unwrap();
+        let position = self.archive_file.stream_position().unwrap();
 
-        self.archive.toc_offset = position;
+        self.archive.toc_offset = position as u128;
 
         //Append toc
-        bincode::serialize_into(&self.file, &self.archive.toc._table).unwrap();
+        bincode::serialize_into(&self.archive_file, &self.archive.toc._table).unwrap();
 
         //Write offset to toc offset at beginning
         {
-            let _f = self.file;
+            let _f = self.archive_file;
 
             //Close the file
         }
