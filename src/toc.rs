@@ -1,10 +1,10 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
 use serde::{Serialize, Deserialize};
+use crate::safepath::SafePathBuf;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct TOC {
-   pub _table: HashMap<PathBuf, u128>,
+   pub (in crate) _table: HashMap<SafePathBuf, u128>,
 }
 
 impl TOC {

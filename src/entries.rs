@@ -1,18 +1,17 @@
 use crate::archive::Archive;
-use std::collections::hash_map::{Keys, Iter};
-use std::path::PathBuf;
+use std::collections::hash_map::{Iter};
 use crate::entry::Entry;
-use std::fs::OpenOptions;
-use std::io::{Seek, SeekFrom};
+use crate::safepath::SafePathBuf;
 
+///An iterator over all the active files in an archive
 pub struct Entries<'a> {
     archive: & 'a Archive,
-    iterator: Iter<'a, PathBuf, u128>,
+    iterator: Iter<'a, SafePathBuf, u128>,
 
 }
 
 impl<'a> Entries<'a> {
-    pub fn new(archive: & 'a Archive) -> Self {
+    pub (in crate) fn new(archive: & 'a Archive) -> Self {
         Entries {
             archive,
             iterator: archive.toc._table.iter(),

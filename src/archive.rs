@@ -3,23 +3,26 @@ use crate::toc::TOC;
 use std::fs::OpenOptions;
 use std::io::{Seek, SeekFrom};
 use crate::builder::Builder;
-use std::collections::HashMap;
 use crate::entries::Entries;
 use crate::entry::Entry;
 use crate::header::Metadata;
-use std::ops::Deref;
 use crate::error::{Result, Error};
 
 const MAGIC_NUMBER: u128 = 0x169f57e6bbb98f2d139ee9a294f9cd3c;
 
+///Archive represents an existing tarpdate archive
+///
+/// With this archive users can append, remove, obtain a list of, remove, read and get the metadata for files.
 #[derive(Debug)]
 pub struct Archive {
-    pub path: PathBuf,
-    pub toc: TOC,
-    pub toc_offset: u128,
+    path: PathBuf,
+    pub(in crate) toc: TOC,
+    pub(in crate) toc_offset: u128,
 }
 
 impl Archive {
+
+    ///Create a new empty archive
     pub fn create<P: AsRef<Path>>(path: P) -> Result<Self> {
 
         let toc = TOC::new();
@@ -44,6 +47,7 @@ impl Archive {
         })
     }
 
+    ///Open an existing archive
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
 
         let mut archive_file = OpenOptions::new().read(true).open(path.as_ref())?;
@@ -65,21 +69,46 @@ impl Archive {
 
     }
 
-    //Return a builder object for the current archive that adds files to the archive
-    pub fn builder(& mut self) -> Builder {
+    ///Return the path of the archive
+    pub fn path(&self) -> &Path {
+        self.path.as_path()
+    }
+
+    ///Return the location of the TOC
+    pub fn toc_offset(&self) -> u128 {
+        self.toc_offset
+    }
+
+    ///Return a builder object for the current archive that adds files to the archive.
+    ///
+    /// Since the toc is removed from the file and stored in memory by this function, and not returned to the file until [`Builder::finalise`] is called,
+    /// if the application panics or otherwise fails during this time, the toc will be lost.
+    ///
+    /// To avoid this, from the moment this function is called, to the moment that  [`Builder::finalise`] is called, as little should be done as possible
+    /// to minimise the chances of a panic.
+    ///
+    /// See [`Builder`] for more information
+    pub fn builder(& mut self) -> Result<Builder> {
 
         Builder::new(self)
 
     }
 
-    pub fn table(&self) -> &HashMap<PathBuf, u128> {
-        &self.toc._table
+    ///Return a hashmap representing the toc
+    ///
+    /// This table maps file paths to header locations
+    pub (in crate) fn table(&self) -> &TOC {
+        &self.toc
     }
 
+    ///Return an iterator over all the active entries in the archive
+    ///
+    /// See [`Entries`] for more information
     pub fn iter(&self) -> Entries {
         Entries::new(self)
     }
 
+    ///Get a specific entry in the archive by path
     pub fn get<'b>(&self, path: & 'b Path) -> Entry<'b> {
 
         let header_offset = self.toc._table.get(path).unwrap();
@@ -100,15 +129,19 @@ impl Archive {
 
         archive_file.seek(SeekFrom::Start(toc_offset as u64))?;
 
-        Ok((bincode::deserialize_from(&archive_file).unwrap(), toc_offset))
+        Ok((bincode::deserialize_from(&archive_file)?, toc_offset))
     }
 
+    ///Remove an entry from the toc
+    ///
+    /// This function will only remove the entry from the toc, it will not remove the file data from the archive.
+    /// To do this, call [`Archive::defrag`]
     pub fn remove<P: AsRef<Path>>(& mut self, path: P) -> Result<()> {
 
         self.toc._table.remove(path.as_ref()).unwrap();
 
         {
-            let mut archive_file = OpenOptions::new().write(true).open(&self.path)?;
+            let archive_file = OpenOptions::new().write(true).open(&self.path)?;
 
             archive_file.set_len(self.toc_offset as u64)?;
         }
@@ -120,11 +153,22 @@ impl Archive {
         Ok(())
     }
 
-    pub fn defrag() {
+    ///Move the data in the archive forward to fill the gaps left by deleted files
+    pub fn defrag(&self) {
 
     }
 
-    //Walk the archive the old fashioned way
+    ///Open the archive at the given path, and see if the toc can be read. If it cant (either because the offset is past EOF or deserialisation of toc fails)
+    fn test() {
+
+    }
+
+    ///Walk the archive and create a new toc (with dummy paths)
+    pub fn repair(&self) {
+
+    }
+
+    ///Walk the archive the old fashioned way
     pub fn walk(&self) -> Result<Vec<u128>> {
         let mut offsets = Vec::new();
 
@@ -132,7 +176,7 @@ impl Archive {
 
         let archive_length = archive_file.metadata()?.len();
 
-        archive_file.seek(SeekFrom::Start(32));
+        archive_file.seek(SeekFrom::Start(32))?;
 
         //Iterate over each header until we cannot serialise anymore, or we serialise a file length outside the archive
         loop {
@@ -177,5 +221,4 @@ impl Archive {
         Ok(offsets)
     }
 
-    //fn verify_magic() -> bool;
 }
